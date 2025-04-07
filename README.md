@@ -1,5 +1,7 @@
 General install instructions can be found here https://svelte.dev/blog/svelte-for-new-developers
-After cloning, remember to run 'npm install' in the app folder(this should only be required the first time)
+After cloning, remember to run 'npm install' in the app folder(this should only be required the first time).
+
+
 To run the app after cloning the repo, navigate into the folder through the terminal and run:
 npm run dev    
 
