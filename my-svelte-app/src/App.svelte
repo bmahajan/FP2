@@ -1,12 +1,15 @@
 <script>
   import { onMount } from "svelte";
   import * as d3 from "d3";
+  // stores.js
+import { writable } from 'svelte/store';
 
   let chartContainer2010;
   let chartContainer2020;
 
   // Income buckets for stacking
   const BUCKETS = ["Low", "Medium", "High"];
+  const selectedBin = writable(null);
 
   onMount(async () => {
     // ---------------------------
@@ -172,7 +175,7 @@
       .style("font-size", "12px");
 
     // 11) Draw stacked rectangles
-    svg
+    const rects = svg
       .selectAll("g.layer")
       .data(series) // 3 layers
       .join("g")
@@ -194,6 +197,9 @@
           High: ${d.data.High}<br/>
         `;
         tooltip.html(html).style("visibility", "visible");
+        // Also highlight this bin in the other chart
+        // We'll store the [x0, x1) in `selectedBin`.
+        selectedBin.set({ x0: d.data.x0, x1: d.data.x1 });
       })
       .on("mousemove", function (event) {
         tooltip
@@ -202,6 +208,7 @@
       })
       .on("mouseout", function () {
         tooltip.style("visibility", "hidden");
+        selectedBin.set(null);
       });
 
     // 12) Title
@@ -232,8 +239,31 @@
       .style("font-size", "12px")
       .text("Frequency (Count)");
 
-    // Optionally rotate x-axis labels if you want distinct ticks for each bin boundary
-    // (But often it's okay to keep them horizontal for a histogram.)
+     // SUBSCRIBE to store so we can highlight or un-highlight bins in response
+     selectedBin.subscribe(bin => {
+      if (bin == null) {
+        // If store is null, remove highlight from all rects
+        rects.attr("stroke", null).attr("stroke-width", null);
+        tooltip.style("visibility", "hidden");
+      } else {
+        // We have a bin range => highlight matching bin
+        rects.each(function (d) {
+          if (d.data.x0 === bin.x0 && d.data.x1 === bin.x1) {
+            d3.select(this).attr("stroke", "black").attr("stroke-width", 2);
+            const binRange = `[${d.data.x0}, ${d.data.x1})`;
+            const html = `
+              <strong>Flip_ind_sum range:</strong> ${binRange}<br/>
+              Low: ${d.data.Low}<br/>
+              Medium: ${d.data.Medium}<br/>
+              High: ${d.data.High}<br/>
+            `;
+            tooltip.html(html).style("visibility", "visible");
+          } else {
+            d3.select(this).attr("stroke", null).attr("stroke-width", null);
+          }
+        });
+      }
+    });
   }
 </script>
 
