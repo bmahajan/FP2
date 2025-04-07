@@ -6,12 +6,14 @@
   import * as d3 from "d3";
 
   let data = [];
-  let chartContainers;
+  let chartContainer2010;
+  let chartContainer2020;
 
   const BUCKETS = ["Low", "Medium", "High"];
   onMount(async () => {
     // load CSV
     const data_2010 = await d3.csv("./public/aggregated2010.csv");
+
 
     data_2010.forEach(d => {
       const mhiVal = +d.mhi;
@@ -29,14 +31,14 @@
     //   - First key: d => d.Flip_ind_sum
     //   - Second key: d => d.income_bucket
     //   - Reducer: groupRows => groupRows.length
-    const grouped_data = d3.rollups(
+    const grouped_data_2010 = d3.rollups(
       data_2010,
       groupRows => groupRows.length,    // aggregator => the count
       d => d.flip_ind_sum,             // group by Flip_ind_sum
       d => d.income_bucket             // then group by income_bucket
     );
 
-    data = grouped_data.map(([flipValue, arr]) => {
+    let visualize_data_2010 = grouped_data_2010.map(([flipValue, arr]) => {
        // arr is something like [ ['Low', count], ['Medium', count], ... ]
        const mapBuckets = new Map(arr);
       return {
@@ -48,13 +50,60 @@
     });
     
     
-    createStackedBarChart();
+    createStackedBarChart({
+      container: chartContainer2010,
+      data: visualize_data_2010,
+      title: '2010 Data'
+    }
+    );
+
+    const data_2020 = await d3.csv("./public/aggregated2020.csv");
+
+    data_2020.forEach(d => {
+      const mhiVal = +d.mhi;
+      if (mhiVal < 60000) {
+        d.income_bucket = 'Low';
+      } else if (mhiVal <= 100000) {
+        d.income_bucket = 'Medium';
+      } else {
+        d.income_bucket = 'High';
+      }
+    });
+
+    // 3) GROUP by Flip_ind_sum & income_bucket to get FREQUENCY (count)
+    // d3.rollups returns nested arrays, so we do:
+    //   - First key: d => d.Flip_ind_sum
+    //   - Second key: d => d.income_bucket
+    //   - Reducer: groupRows => groupRows.length
+    const grouped_data_2020 = d3.rollups(
+      data_2020,
+      groupRows => groupRows.length,    // aggregator => the count
+      d => d.flip_ind_sum,             // group by Flip_ind_sum
+      d => d.income_bucket             // then group by income_bucket
+    );
+
+    let visualize_data_2020 = grouped_data_2020.map(([flipValue, arr]) => {
+       // arr is something like [ ['Low', count], ['Medium', count], ... ]
+       const mapBuckets = new Map(arr);
+      return {
+        Flip_ind_sum: flipValue,
+        Low: mapBuckets.get('Low') || 0,
+        Medium: mapBuckets.get('Medium') || 0,
+        High: mapBuckets.get('High') || 0
+      };
+    });
+
+    createStackedBarChart({
+      container: chartContainer2020,
+      data: visualize_data_2020,
+      title: '2020 Data'
+    });
 
   });
 
-  function createStackedBarChart() {
+  function createStackedBarChart({ container, data, title }) {
     // Clear any existing content (helpful on hot reload)
-    if (chartContainers) chartContainers.innerHTML = '';
+    if (container) container.innerHTML = '';
 
     const margin = { top: 30, right: 30, bottom: 40, left: 60 };
     const width = 600;
@@ -62,7 +111,7 @@
 
     // 1) Create SVG
     const svg = d3
-      .select(chartContainers)
+      .select(container)
       .append('svg')
       .attr('width', width)
       .attr('height', height);
@@ -110,7 +159,7 @@
 
     // 4) Tooltip (basic HTML div)
     const tooltip = d3
-      .select(chartContainers)
+      .select(container)
       .append('div')
       .style('position', 'absolute')
       .style('visibility', 'hidden')
@@ -161,7 +210,8 @@
       .attr('y', margin.top / 2)
       .attr('text-anchor', 'middle')
       .style('font-weight', 'bold')
-      .text('Stacked Bar by Income Bucket');
+      .text(title)
+      //.text('Stacked Bar by Income Bucket');
 
     // X-axis label
     svg
@@ -198,8 +248,12 @@
 </script>
 
 <!-- The container where the chart will go -->
-<div bind:this={chartContainers} style="width: 100%; overflow-x: auto;">
 
+
+<div style="display: flex; gap: 2rem;">
+  <!-- Each container for a chart -->
+  <div bind:this={chartContainer2010}></div>
+  <div bind:this={chartContainer2020}></div>
 </div>
 
 <!-- Display a loading message if data is still empty -->
