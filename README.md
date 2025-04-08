@@ -6,3 +6,5 @@ To run the app after cloning the repo, navigate into the folder through the term
 npm run dev    
 
 In a browser go to http://localhost:5173/ to see the output. Console logging can be seen via Chrome's Dev Tools. 
+
+Dependencies: Make sure you have d3 downloaded (npm install d3)
