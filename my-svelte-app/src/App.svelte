@@ -20,8 +20,48 @@ let selectedHousehold = 'All';
 let selectedTenure = 'All';
 let selectedInvestor = 'All';
 
+// Precompute data, bin, and stack
+function processAndBinData(data) {
+  const flipVals = data.map(d => d.flip_ind_sum);
+  const xMin = d3.min(flipVals);
+  const xMax = d3.max(flipVals);
+  const binGen = d3.bin()
+    .value(d => d.flip_ind_sum)
+    .domain([xMin, xMax])
+    .thresholds(d3.range(0, xMax + 5, 5));
+  const bins = binGen(data);
+
+  const binData = bins.map(bin => {
+      const roll = d3.rollups(bin, v => v.length, d => d.income_bucket);
+      const mapB = new Map(roll);
+      return {
+        x0: bin.x0,
+        x1: bin.x1,
+        Low: mapB.get("Low") || 0,
+        Medium: mapB.get("Medium") || 0,
+        High: mapB.get("High") || 0
+      };
+    })
+
+  const stack = d3.stack().keys(BUCKETS);
+  const series = stack(binData);
+  const yMax = d3.max(series[series.length - 1], d => d[1]);
+
+  return {
+    series,
+    xMin,
+    xMax,
+    yMax
+  };
+}
 
 function applyFilters() {
+  // Store the precomputed binned data
+  const processed2010 = processAndBinData(filteredData2010);
+  const processed2020 = processAndBinData(filteredData2020);
+  const maxYMax = Math.max(processed2010.yMax, processed2020.yMax);
+
+  // Apply filters
   console.log("Filter state:", {
     selectedAgeGroup,
     selectedRace,
@@ -76,7 +116,8 @@ function applyFilters() {
 
     return agePass && racePass && householdPass && tenurePass && investorPass;
   }
-    console.log("Before filtering:", data2020.length);
+  
+  console.log("Before filtering:", data2020.length);
   console.log("After filtering:", filteredData2020.length);
 
   filteredData2010 = data2010.filter(filterFn);
@@ -84,17 +125,18 @@ function applyFilters() {
 
   createStackedHistogram({
     container: chartContainer2010,
-    rawData: filteredData2010,
+    processedData: {...processed2010, yMax: maxYMax}, // Sets the same yMax for both histograms
+    compareData: processed2020.binData,
     title: "2010 Data (Filtered Histogram)"
   });
 
   createStackedHistogram({
     container: chartContainer2020,
-    rawData: filteredData2020,
+    processedData: {...processed2020, yMax: maxYMax}, // Sets the same yMax for both histograms
+    compareData: processed2010.binData,
     title: "2020 Data (Filtered Histogram)"
   });
 }
-
 
 onMount(async () => {
   const raw2010 = await d3.csv("/aggregated2010.csv");
@@ -116,34 +158,16 @@ onMount(async () => {
   applyFilters();
 });
 
-  function createStackedHistogram({ container, rawData, title }) {
+  function createStackedHistogram({ container, processedData, compareData, title }) {
     if (container) container.innerHTML = "";
     const margin = { top: 30, right: 30, bottom: 40, left: 60 };
     const width = 600;
     const height = 400;
 
     const svg = d3.select(container).append("svg").attr("width", width).attr("height", height);
-    const flipVals = rawData.map(d => d.flip_ind_sum);
-    const xMin = d3.min(flipVals);
-    const xMax = d3.max(flipVals);
-    const binGen = d3.bin().value(d => d.flip_ind_sum).domain([xMin, xMax]).thresholds(d3.range(0, xMax + 5, 5));
-    const bins = binGen(rawData);
 
-    const binnedData = bins.map(bin => {
-      const roll = d3.rollups(bin, v => v.length, d => d.income_bucket);
-      const mapB = new Map(roll);
-      return {
-        x0: bin.x0,
-        x1: bin.x1,
-        Low: mapB.get("Low") || 0,
-        Medium: mapB.get("Medium") || 0,
-        High: mapB.get("High") || 0
-      };
-    });
+    const { series, xMin, xMax, yMax } = processedData;
 
-    const stack = d3.stack().keys(BUCKETS);
-    const series = stack(binnedData);
-    const yMax = d3.max(series[series.length - 1], d => d[1]);
     const y = d3.scaleLinear().domain([0, yMax]).range([height - margin.bottom, margin.top]).nice();
     const x = d3.scaleLinear().domain([xMin, xMax]).range([margin.left, width - margin.right]);
 
@@ -229,6 +253,7 @@ onMount(async () => {
               Low: ${d.data.Low}<br/>
               Medium: ${d.data.Medium}<br/>
               High: ${d.data.High}<br/>
+              Total: ${d.data.Low + d.data.Medium + d.data.High}<br/>
             `;
             tooltip.html(html).style("visibility", "visible");
           } else {
