@@ -184,7 +184,31 @@ onMount(async () => {
         tooltip.style("visibility", "hidden");
         selectedBin.set(null);
       });
-
+   // 12) Title
+    svg
+      .append("text")
+      .attr("x", width / 2)
+      .attr("y", margin.top / 2)
+      .attr("text-anchor", "middle")
+      .style("font-weight", "bold")
+      .text(title || "Stacked Histogram (Bin = 5)");
+    // X-axis label
+    svg
+      .append("text")
+      .attr("x", width / 2)
+      .attr("y", height - 5)
+      .attr("text-anchor", "middle")
+      .style("font-size", "10px")
+      .text("flip_ind_sum (binned)");
+    // Y-axis label
+    svg
+      .append("text")
+      .attr("transform", "rotate(-90)")
+      .attr("y", margin.left - 50)
+      .attr("x", -(height / 2))
+      .attr("text-anchor", "middle")
+      .style("font-size", "12px")
+      .text("Frequency (Count)");
     svg.append("text").attr("x", width / 2).attr("y", margin.top / 2)
       .attr("text-anchor", "middle").style("font-weight", "bold")
       .text(title || "Histogram");
