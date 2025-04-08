@@ -1,117 +1,136 @@
 <script>
   import { onMount } from "svelte";
   import * as d3 from "d3";
-  // stores.js
-import { writable } from 'svelte/store';
+  import { writable } from 'svelte/store';
+  import FilterPanel from './components/FilterPanel.svelte'; // you'll create this file
 
   let chartContainer2010;
   let chartContainer2020;
 
-  // Income buckets for stacking
   const BUCKETS = ["Low", "Medium", "High"];
   const selectedBin = writable(null);
 
-  onMount(async () => {
-    // ---------------------------
-    // 1) LOAD & PREP 2010 DATA
-    // ---------------------------
-    const data_2010 = await d3.csv("/aggregated2010.csv");
-    // Convert to numeric + classify by MHI => income_bucket
-    data_2010.forEach(d => {
-      d.flip_ind_sum = +d.flip_ind_sum; // ensure numeric
-      const mhiVal = +d.mhi;
-      if (mhiVal < 60000) {
-        d.income_bucket = "Low";
-      } else if (mhiVal <= 100000) {
-        d.income_bucket = "Medium";
-      } else {
-        d.income_bucket = "High";
-      }
-    });
+let data2010 = [];
+let data2020 = [];
+let filteredData2010 = [];
+let filteredData2020 = [];
+let selectedAgeGroup = 'All';
+let selectedRace = 'All';
+let selectedHousehold = 'All';
+let selectedTenure = 'All';
+let selectedInvestor = 'All';
 
-    // Create stacked histogram
-    createStackedHistogram({
-      container: chartContainer2010,
-      rawData: data_2010,
-      title: "2010 Data (Stacked Histogram)"
-    });
 
-    // ---------------------------
-    // 2) LOAD & PREP 2020 DATA
-    // ---------------------------
-    const data_2020 = await d3.csv("/aggregated2020.csv");
-    // Convert to numeric + classify
-    data_2020.forEach(d => {
-      d.flip_ind_sum = +d.flip_ind_sum;
-      const mhiVal = +d.mhi;
-      if (mhiVal < 60000) {
-        d.income_bucket = "Low";
-      } else if (mhiVal <= 100000) {
-        d.income_bucket = "Medium";
-      } else {
-        d.income_bucket = "High";
-      }
-    });
-
-    // Create stacked histogram
-    createStackedHistogram({
-      container: chartContainer2020,
-      rawData: data_2020,
-      title: "2020 Data (Stacked Histogram)"
-    });
+function applyFilters() {
+  console.log("Filter state:", {
+    selectedAgeGroup,
+    selectedRace,
+    selectedHousehold,
+    selectedTenure,
+    selectedInvestor
   });
 
-  /**
-   * createStackedHistogram
-   * ----------------------
-   * Expects:
-   *   rawData: array of rows { flip_ind_sum, income_bucket, ...}
-   *   container: a DOM element where we append <svg>
-   *   title: optional chart title
-   */
-  function createStackedHistogram({ container, rawData, title }) {
-    // Clear container
-    if (container) container.innerHTML = "";
+  const raceColumnMap = {
+    'Non-Hispanic White': 'nhwhi',
+    'Non-Hispanic Black or African American': 'nhaa',
+    'Non-Hispanic American Indian': 'nhna',
+    'Non-Hispanic Asian': 'nhas',
+    'Non-Hispanic Pacific Islander': 'nhpi',
+    'Non-Hispanic Multi-Race': 'nhmlt',
+    'Non-Hispanic Other': 'nhoth',
+    'Hispanic or Latino': 'lat'
+  };
 
+  const investorColumnMap = {
+    'Institutional': 'restype_R1F_sum',
+    'Large Investor': 'sum_large_investor',
+    'Medium Investor': 'sum_medium_investor',
+    'Small Investor': 'sum_small_investor',
+    'Non-Investor': 'sum_non_investor'
+  };
+
+  function filterFn(d) {
+    const agePass =
+      selectedAgeGroup === 'All' ||
+      (selectedAgeGroup === 'Under 18' && +d.pop_u18 > 0) ||
+      (selectedAgeGroup === '18-64' && +d.pop_18_64 > 0) ||
+      (selectedAgeGroup === '65 and over' && +d.pop_65o > 0);
+
+    const racePass =
+      selectedRace === 'All' ||
+      (+d[raceColumnMap[selectedRace]] > 0);
+
+    const householdPass =
+      selectedHousehold === 'All' ||
+      (selectedHousehold === 'Family Household' && +d.fhh > 0) ||
+      (selectedHousehold === 'Nonfamily Household' && +d.nfhh > 0);
+
+    const tenurePass =
+      selectedTenure === 'All' ||
+      (selectedTenure === 'Owner-Occupied' && +d.o_mhi > 0) ||
+      (selectedTenure === 'Renter-Occupied' && +d.r_mhi > 0);
+
+    const investorPass =
+      selectedInvestor === 'All' ||
+      (+d[investorColumnMap[selectedInvestor]] > 0);
+
+    return agePass && racePass && householdPass && tenurePass && investorPass;
+  }
+    console.log("Before filtering:", data2020.length);
+  console.log("After filtering:", filteredData2020.length);
+
+  filteredData2010 = data2010.filter(filterFn);
+  filteredData2020 = data2020.filter(filterFn);
+
+  createStackedHistogram({
+    container: chartContainer2010,
+    rawData: filteredData2010,
+    title: "2010 Data (Filtered Histogram)"
+  });
+
+  createStackedHistogram({
+    container: chartContainer2020,
+    rawData: filteredData2020,
+    title: "2020 Data (Filtered Histogram)"
+  });
+}
+
+
+onMount(async () => {
+  const raw2010 = await d3.csv("/aggregated2010.csv");
+  raw2010.forEach(d => {
+    d.flip_ind_sum = +d.flip_ind_sum;
+    const mhiVal = +d.mhi;
+    d.income_bucket = mhiVal < 60000 ? "Low" : (mhiVal <= 100000 ? "Medium" : "High");
+  });
+
+  const raw2020 = await d3.csv("/aggregated2020.csv");
+  raw2020.forEach(d => {
+    d.flip_ind_sum = +d.flip_ind_sum;
+    const mhiVal = +d.mhi;
+    d.income_bucket = mhiVal < 60000 ? "Low" : (mhiVal <= 100000 ? "Medium" : "High");
+  });
+
+  data2010 = raw2010;
+  data2020 = raw2020;
+  applyFilters();
+});
+
+  function createStackedHistogram({ container, rawData, title }) {
+    if (container) container.innerHTML = "";
     const margin = { top: 30, right: 30, bottom: 40, left: 60 };
     const width = 600;
     const height = 400;
 
-    // 1) Create SVG
-    const svg = d3
-      .select(container)
-      .append("svg")
-      .attr("width", width)
-      .attr("height", height);
-
-    // 2) Determine xMin & xMax from rawData
+    const svg = d3.select(container).append("svg").attr("width", width).attr("height", height);
     const flipVals = rawData.map(d => d.flip_ind_sum);
     const xMin = d3.min(flipVals);
     const xMax = d3.max(flipVals);
-
-    // 3) Build a bin generator with fixed step = 5
-    //    If xMin > 0, you could do d3.range(xMin, xMax+5, 5)
-    //    If there's negative or large data, adjust as needed.
-    const binGen = d3
-      .bin()
-      .value(d => d.flip_ind_sum)
-      .domain([xMin, xMax])
-      .thresholds(d3.range(0, xMax + 5, 5)); // [0, 5, 10, 15, ...] up to xMax
-
-    // 4) Generate bins (each bin is an array of rows)
-    //    bin.x0 = lower edge, bin.x1 = upper edge
+    const binGen = d3.bin().value(d => d.flip_ind_sum).domain([xMin, xMax]).thresholds(d3.range(0, xMax + 5, 5));
     const bins = binGen(rawData);
 
-    // 5) For each bin, group by income_bucket => count
-    //    We'll pivot that into { x0, x1, Low, Medium, High }
     const binnedData = bins.map(bin => {
-      const roll = d3.rollups(
-        bin,
-        v => v.length,
-        d => d.income_bucket
-      );
-      // roll is e.g. [ ["Low", 3], ["Medium", 5], ["High", 1] ]
-
+      const roll = d3.rollups(bin, v => v.length, d => d.income_bucket);
       const mapB = new Map(roll);
       return {
         x0: bin.x0,
@@ -122,50 +141,18 @@ import { writable } from 'svelte/store';
       };
     });
 
-    // 6) Use d3.stack() to create stacked layers for [Low, Medium, High]
     const stack = d3.stack().keys(BUCKETS);
     const series = stack(binnedData);
-    // Example of series shape:
-    // series[0] => array of [y0, y1, dataObj] for 'Low'
-    // series[1] => array of [y0, y1, dataObj] for 'Medium'
-    // series[2] => array of [y0, y1, dataObj] for 'High'
-
-    // 7) Y domain (max stacked height)
     const yMax = d3.max(series[series.length - 1], d => d[1]);
-    // Build y scale
-    const y = d3
-      .scaleLinear()
-      .domain([0, yMax])
-      .range([height - margin.bottom, margin.top])
-      .nice();
+    const y = d3.scaleLinear().domain([0, yMax]).range([height - margin.bottom, margin.top]).nice();
+    const x = d3.scaleLinear().domain([xMin, xMax]).range([margin.left, width - margin.right]);
 
-    // 8) X scale is linear from xMin to xMax
-    const x = d3
-      .scaleLinear()
-      .domain([xMin, xMax])
-      .range([margin.left, width - margin.right]);
+    svg.append("g").attr("transform", `translate(0, ${height - margin.bottom})`).call(d3.axisBottom(x));
+    svg.append("g").attr("transform", `translate(${margin.left}, 0)`).call(d3.axisLeft(y));
 
-    // Axes
-    svg
-      .append("g")
-      .attr("transform", `translate(0, ${height - margin.bottom})`)
-      .call(d3.axisBottom(x));
+    const color = d3.scaleOrdinal().domain(BUCKETS).range(["steelblue", "orange", "green"]);
 
-    svg
-      .append("g")
-      .attr("transform", `translate(${margin.left}, 0)`)
-      .call(d3.axisLeft(y));
-
-    // 9) Color scale
-    const color = d3
-      .scaleOrdinal()
-      .domain(BUCKETS)
-      .range(["steelblue", "orange", "green"]);
-
-    // 10) Tooltip
-    const tooltip = d3
-      .select(container)
-      .append("div")
+    const tooltip = d3.select(container).append("div")
       .style("position", "absolute")
       .style("visibility", "hidden")
       .style("background", "#f0f0f0")
@@ -174,44 +161,30 @@ import { writable } from 'svelte/store';
       .style("border-radius", "4px")
       .style("font-size", "12px");
 
-    // 11) Draw stacked rectangles
-    const rects = svg
-      .selectAll("g.layer")
-      .data(series) // 3 layers
-      .join("g")
+    const rects = svg.selectAll("g.layer")
+      .data(series).join("g")
       .attr("class", "layer")
       .attr("fill", d => color(d.key))
       .selectAll("rect")
-      .data(d => d) // each layer's bins
-      .join("rect")
+      .data(d => d).join("rect")
       .attr("x", d => x(d.data.x0))
-      .attr("width", d => x(d.data.x1) - x(d.data.x0)) // bin width
+      .attr("width", d => x(d.data.x1) - x(d.data.x0))
       .attr("y", d => y(d[1]))
       .attr("height", d => y(d[0]) - y(d[1]))
       .on("mouseover", function (event, d) {
         const binRange = `[${d.data.x0}, ${d.data.x1})`;
-        const html = `
-          <strong>Flip_ind_sum range:</strong> ${binRange}<br/>
-          Low: ${d.data.Low}<br/>
-          Medium: ${d.data.Medium}<br/>
-          High: ${d.data.High}<br/>
-        `;
-        tooltip.html(html).style("visibility", "visible");
-        // Also highlight this bin in the other chart
-        // We'll store the [x0, x1) in `selectedBin`.
+        tooltip.html(`<strong>Range:</strong> ${binRange}<br/>Low: ${d.data.Low}<br/>Medium: ${d.data.Medium}<br/>High: ${d.data.High}`)
+          .style("visibility", "visible");
         selectedBin.set({ x0: d.data.x0, x1: d.data.x1 });
       })
       .on("mousemove", function (event) {
-        tooltip
-          .style("top", event.pageY + 10 + "px")
-          .style("left", event.pageX + 10 + "px");
+        tooltip.style("top", event.pageY + 10 + "px").style("left", event.pageX + 10 + "px");
       })
       .on("mouseout", function () {
         tooltip.style("visibility", "hidden");
         selectedBin.set(null);
       });
-
-    // 12) Title
+   // 12) Title
     svg
       .append("text")
       .attr("x", width / 2)
@@ -219,7 +192,6 @@ import { writable } from 'svelte/store';
       .attr("text-anchor", "middle")
       .style("font-weight", "bold")
       .text(title || "Stacked Histogram (Bin = 5)");
-
     // X-axis label
     svg
       .append("text")
@@ -228,7 +200,6 @@ import { writable } from 'svelte/store';
       .attr("text-anchor", "middle")
       .style("font-size", "10px")
       .text("flip_ind_sum (binned)");
-
     // Y-axis label
     svg
       .append("text")
@@ -238,8 +209,10 @@ import { writable } from 'svelte/store';
       .attr("text-anchor", "middle")
       .style("font-size", "12px")
       .text("Frequency (Count)");
+    svg.append("text").attr("x", width / 2).attr("y", margin.top / 2)
+      .attr("text-anchor", "middle").style("font-weight", "bold")
+      .text(title || "Histogram");
 
-     // SUBSCRIBE to store so we can highlight or un-highlight bins in response
      selectedBin.subscribe(bin => {
       if (bin == null) {
         // If store is null, remove highlight from all rects
@@ -265,19 +238,30 @@ import { writable } from 'svelte/store';
       }
     });
   }
+$: [selectedAgeGroup, selectedRace, selectedHousehold, selectedTenure, selectedInvestor, data2020] && applyFilters();
 </script>
 
-<!-- The container where the chart will go -->
+<div style="display: flex; flex-direction: column; align-items: center; gap: 2rem;">
+  <!-- Filter Panel centered on top -->
+  <FilterPanel
+    {data2020}
+    bind:selectedAgeGroup
+    bind:selectedRace
+    bind:selectedHousehold
+    bind:selectedTenure
+    bind:selectedInvestor
+  />
 
-
-<div style="display: flex; gap: 2rem;">
-  <!-- Each container for a chart -->
-  <div bind:this={chartContainer2010}></div>
-  <div bind:this={chartContainer2020}></div>
+  <!-- Histograms side by side -->
+  <div style="display: flex; gap: 2rem;">
+    <div bind:this={chartContainer2010}></div>
+    <div bind:this={chartContainer2020}></div>
+  </div>
 </div>
 
-
-
 <style>
- 
+  select, input[type="range"] {
+    display: block;
+    margin-bottom: 1rem;
+  }
 </style>
