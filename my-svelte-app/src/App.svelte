@@ -49,6 +49,7 @@ function processAndBinData(data) {
 
   return {
     series,
+    binData,
     xMin,
     xMax,
     yMax
@@ -179,7 +180,7 @@ onMount(async () => {
     const tooltip = d3.select(container).append("div")
       .style("position", "absolute")
       .style("visibility", "hidden")
-      .style("background", "#f0f0f0")
+      .style("background", "#fff")
       .style("padding", "4px")
       .style("border", "1px solid #999")
       .style("border-radius", "4px")
@@ -197,8 +198,9 @@ onMount(async () => {
       .attr("height", d => y(d[0]) - y(d[1]))
       .on("mouseover", function (event, d) {
         const binRange = `[${d.data.x0}, ${d.data.x1})`;
-        tooltip.html(`<strong>Range:</strong> ${binRange}<br/>Low: ${d.data.Low}<br/>Medium: ${d.data.Medium}<br/>High: ${d.data.High}`)
+        tooltip.html(`<strong>Range:</strong> ${binRange}<br/>Low: ${d.data.Low}<br/>Medium: ${d.data.Medium}<br/>High: ${d.data.High}<br/>Total: ${d.data.Low + d.data.Medium + d.data.High}`)
           .style("visibility", "visible");
+        //console.log("Hovered bin:", d.data.x0, d.data.x1);
         selectedBin.set({ x0: d.data.x0, x1: d.data.x1 });
       })
       .on("mousemove", function (event) {
@@ -208,7 +210,7 @@ onMount(async () => {
         tooltip.style("visibility", "hidden");
         selectedBin.set(null);
       });
-   // 12) Title
+    // 12) Title
     svg
       .append("text")
       .attr("x", width / 2)
@@ -236,8 +238,9 @@ onMount(async () => {
     svg.append("text").attr("x", width / 2).attr("y", margin.top / 2)
       .attr("text-anchor", "middle").style("font-weight", "bold")
       .text(title || "Histogram");
-
-     selectedBin.subscribe(bin => {
+    
+    // TOOLTIP
+    selectedBin.subscribe(bin => {
       if (bin == null) {
         // If store is null, remove highlight from all rects
         rects.attr("stroke", null).attr("stroke-width", null);
@@ -246,14 +249,41 @@ onMount(async () => {
         // We have a bin range => highlight matching bin
         rects.each(function (d) {
           if (d.data.x0 === bin.x0 && d.data.x1 === bin.x1) {
+
             d3.select(this).attr("stroke", "black").attr("stroke-width", 2);
+
             const binRange = `[${d.data.x0}, ${d.data.x1})`;
-            const html = `
-              <strong>Flip_ind_sum range:</strong> ${binRange}<br/>
-              Low: ${d.data.Low}<br/>
-              Medium: ${d.data.Medium}<br/>
-              High: ${d.data.High}<br/>
-              Total: ${d.data.Low + d.data.Medium + d.data.High}<br/>
+            const otherBin = compareData.find(b => b.x0 === d.data.x0 && b.x1 === d.data.x1) || { Low: 0, Medium: 0, High: 0 };
+
+            const thisYear = d.data;
+            const lastYear = otherBin;
+
+            const totalThis = thisYear.Low + thisYear.Medium + thisYear.High;
+            const totalLast = lastYear.Low + lastYear.Medium + lastYear.High;
+
+            const pct = (now, prev) =>
+              prev === 0 ? 'N/A' : `${((now - prev) / prev * 100).toFixed(1)}%`;
+
+            // Check if this is the 2020 chart
+            const is2020 = title.includes("2020");
+
+            // Only show percentage change for 2020
+            const html = is2020
+            ? `
+            <strong>Number of flips:</strong> ${binRange}<br/><br/>
+            <u>2020</u><br/>
+            High: ${thisYear.High} (${pct(thisYear.High, lastYear.High)})<br/>
+            Medium: ${thisYear.Medium} (${pct(thisYear.Medium, lastYear.Medium)})<br/>
+            Low: ${thisYear.Low} (${pct(thisYear.Low, lastYear.Low)})<br/>
+            Total: ${totalThis} (${pct(totalThis, totalLast)})<br/>
+            `
+            : `
+            <strong>Number of flips:</strong> ${binRange}<br/><br/>
+            <u>2010</u><br/>
+            High: ${thisYear.High}<br/>
+            Medium: ${thisYear.Medium}<br/>
+            Low: ${thisYear.Low}<br/>
+            Total: ${totalThis}<br/>
             `;
             tooltip.html(html).style("visibility", "visible");
           } else {
