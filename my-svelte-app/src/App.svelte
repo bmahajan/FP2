@@ -20,8 +20,49 @@ let selectedHousehold = 'All';
 let selectedTenure = 'All';
 let selectedInvestor = 'All';
 
+// Precompute data, bin, and stack
+function processAndBinData(data) {
+  const flipVals = data.map(d => d.flip_ind_sum);
+  const xMin = d3.min(flipVals);
+  const xMax = d3.max(flipVals);
+  const binGen = d3.bin()
+    .value(d => d.flip_ind_sum)
+    .domain([xMin, xMax])
+    .thresholds(d3.range(0, xMax + 5, 5));
+  const bins = binGen(data);
+
+  const binData = bins.map(bin => {
+      const roll = d3.rollups(bin, v => v.length, d => d.income_bucket);
+      const mapB = new Map(roll);
+      return {
+        x0: bin.x0,
+        x1: bin.x1,
+        Low: mapB.get("Low") || 0,
+        Medium: mapB.get("Medium") || 0,
+        High: mapB.get("High") || 0
+      };
+    })
+
+  const stack = d3.stack().keys(BUCKETS);
+  const series = stack(binData);
+  const yMax = d3.max(series[series.length - 1], d => d[1]);
+
+  return {
+    series,
+    binData,
+    xMin,
+    xMax,
+    yMax
+  };
+}
 
 function applyFilters() {
+  // Store the precomputed binned data
+  const processed2010 = processAndBinData(filteredData2010);
+  const processed2020 = processAndBinData(filteredData2020);
+  const maxYMax = Math.max(processed2010.yMax, processed2020.yMax);
+
+  // Apply filters
   console.log("Filter state:", {
     selectedAgeGroup,
     selectedRace,
@@ -76,7 +117,8 @@ function applyFilters() {
 
     return agePass && racePass && householdPass && tenurePass && investorPass;
   }
-    console.log("Before filtering:", data2020.length);
+  
+  console.log("Before filtering:", data2020.length);
   console.log("After filtering:", filteredData2020.length);
 
   filteredData2010 = data2010.filter(filterFn);
@@ -84,17 +126,18 @@ function applyFilters() {
 
   createStackedHistogram({
     container: chartContainer2010,
-    rawData: filteredData2010,
+    processedData: {...processed2010, yMax: maxYMax}, // Sets the same yMax for both histograms
+    compareData: processed2020.binData,
     title: "2010 Data (Filtered Histogram)"
   });
 
   createStackedHistogram({
     container: chartContainer2020,
-    rawData: filteredData2020,
+    processedData: {...processed2020, yMax: maxYMax}, // Sets the same yMax for both histograms
+    compareData: processed2010.binData,
     title: "2020 Data (Filtered Histogram)"
   });
 }
-
 
 onMount(async () => {
   const raw2010 = await d3.csv("/aggregated2010.csv");
@@ -116,34 +159,16 @@ onMount(async () => {
   applyFilters();
 });
 
-  function createStackedHistogram({ container, rawData, title }) {
+  function createStackedHistogram({ container, processedData, compareData, title }) {
     if (container) container.innerHTML = "";
     const margin = { top: 30, right: 30, bottom: 40, left: 60 };
     const width = 600;
     const height = 400;
 
     const svg = d3.select(container).append("svg").attr("width", width).attr("height", height);
-    const flipVals = rawData.map(d => d.flip_ind_sum);
-    const xMin = d3.min(flipVals);
-    const xMax = d3.max(flipVals);
-    const binGen = d3.bin().value(d => d.flip_ind_sum).domain([xMin, xMax]).thresholds(d3.range(0, xMax + 5, 5));
-    const bins = binGen(rawData);
 
-    const binnedData = bins.map(bin => {
-      const roll = d3.rollups(bin, v => v.length, d => d.income_bucket);
-      const mapB = new Map(roll);
-      return {
-        x0: bin.x0,
-        x1: bin.x1,
-        Low: mapB.get("Low") || 0,
-        Medium: mapB.get("Medium") || 0,
-        High: mapB.get("High") || 0
-      };
-    });
+    const { series, xMin, xMax, yMax } = processedData;
 
-    const stack = d3.stack().keys(BUCKETS);
-    const series = stack(binnedData);
-    const yMax = d3.max(series[series.length - 1], d => d[1]);
     const y = d3.scaleLinear().domain([0, yMax]).range([height - margin.bottom, margin.top]).nice();
     const x = d3.scaleLinear().domain([xMin, xMax]).range([margin.left, width - margin.right]);
 
@@ -155,7 +180,7 @@ onMount(async () => {
     const tooltip = d3.select(container).append("div")
       .style("position", "absolute")
       .style("visibility", "hidden")
-      .style("background", "#f0f0f0")
+      .style("background", "#fff")
       .style("padding", "4px")
       .style("border", "1px solid #999")
       .style("border-radius", "4px")
@@ -173,8 +198,9 @@ onMount(async () => {
       .attr("height", d => y(d[0]) - y(d[1]))
       .on("mouseover", function (event, d) {
         const binRange = `[${d.data.x0}, ${d.data.x1})`;
-        tooltip.html(`<strong>Range:</strong> ${binRange}<br/>Low: ${d.data.Low}<br/>Medium: ${d.data.Medium}<br/>High: ${d.data.High}`)
+        tooltip.html(`<strong>Range:</strong> ${binRange}<br/>Low: ${d.data.Low}<br/>Medium: ${d.data.Medium}<br/>High: ${d.data.High}<br/>Total: ${d.data.Low + d.data.Medium + d.data.High}`)
           .style("visibility", "visible");
+        //console.log("Hovered bin:", d.data.x0, d.data.x1);
         selectedBin.set({ x0: d.data.x0, x1: d.data.x1 });
       })
       .on("mousemove", function (event) {
@@ -184,7 +210,7 @@ onMount(async () => {
         tooltip.style("visibility", "hidden");
         selectedBin.set(null);
       });
-   // 12) Title
+    // 12) Title
     svg
       .append("text")
       .attr("x", width / 2)
@@ -212,8 +238,9 @@ onMount(async () => {
     svg.append("text").attr("x", width / 2).attr("y", margin.top / 2)
       .attr("text-anchor", "middle").style("font-weight", "bold")
       .text(title || "Histogram");
-
-     selectedBin.subscribe(bin => {
+    
+    // TOOLTIP
+    selectedBin.subscribe(bin => {
       if (bin == null) {
         // If store is null, remove highlight from all rects
         rects.attr("stroke", null).attr("stroke-width", null);
@@ -222,13 +249,41 @@ onMount(async () => {
         // We have a bin range => highlight matching bin
         rects.each(function (d) {
           if (d.data.x0 === bin.x0 && d.data.x1 === bin.x1) {
+
             d3.select(this).attr("stroke", "black").attr("stroke-width", 2);
+
             const binRange = `[${d.data.x0}, ${d.data.x1})`;
-            const html = `
-              <strong>Flip_ind_sum range:</strong> ${binRange}<br/>
-              Low: ${d.data.Low}<br/>
-              Medium: ${d.data.Medium}<br/>
-              High: ${d.data.High}<br/>
+            const otherBin = compareData.find(b => b.x0 === d.data.x0 && b.x1 === d.data.x1) || { Low: 0, Medium: 0, High: 0 };
+
+            const thisYear = d.data;
+            const lastYear = otherBin;
+
+            const totalThis = thisYear.Low + thisYear.Medium + thisYear.High;
+            const totalLast = lastYear.Low + lastYear.Medium + lastYear.High;
+
+            const pct = (now, prev) =>
+              prev === 0 ? 'N/A' : `${((now - prev) / prev * 100).toFixed(1)}%`;
+
+            // Check if this is the 2020 chart
+            const is2020 = title.includes("2020");
+
+            // Only show percentage change for 2020
+            const html = is2020
+            ? `
+            <strong>Number of flips:</strong> ${binRange}<br/><br/>
+            <u>2020</u><br/>
+            High: ${thisYear.High} (${pct(thisYear.High, lastYear.High)})<br/>
+            Medium: ${thisYear.Medium} (${pct(thisYear.Medium, lastYear.Medium)})<br/>
+            Low: ${thisYear.Low} (${pct(thisYear.Low, lastYear.Low)})<br/>
+            Total: ${totalThis} (${pct(totalThis, totalLast)})<br/>
+            `
+            : `
+            <strong>Number of flips:</strong> ${binRange}<br/><br/>
+            <u>2010</u><br/>
+            High: ${thisYear.High}<br/>
+            Medium: ${thisYear.Medium}<br/>
+            Low: ${thisYear.Low}<br/>
+            Total: ${totalThis}<br/>
             `;
             tooltip.html(html).style("visibility", "visible");
           } else {
